@@ -1,0 +1,28 @@
+■Outlook自動終了
+---
+1. 以下のファイルを作成する。
+　　C:\tool\task\CloseOutlook.ps1
+
+　　内容：
+　　Get-Process -Name outlook | Stop-Process -Force
+
+---
+1. Windowsの検索窓から「タスクスケジューラ」を起動する。
+
+2. 右のウィンドウで「タスクの作成...」を押下する。
+
+3. 全般タブで、以下の項目を入力する。
+　　「名前」：Outlook自動終了
+　　「説明」：毎日17:45にOutlookを自動終了する。
+　　「ユーザーがログオンしているかどうかにかかわらず実行する」：選択する
+
+4. トリガータブで、以下の項目を入力する。
+　　「新規」を押下する。
+　　　　「毎日」：選択する
+　　　　「開始」：YYYY/MM/DD 17:40:00
+
+5. トリガータブで、以下の項目を入力する。
+　　「新規」を押下する。
+　　　　「プログラム/スクリプト」：powershell.exe
+　　　　「引数の追加」：-ExecutionPolicy Bypass -File "C:\tool\task\CloseOutlook.ps1"
+
