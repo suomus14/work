@@ -27,3 +27,96 @@
 ＜課業４＞
 CM活動では、予定工数内での作業を維持しつつ、新入社員に対して単に答えを教えるのではなく、ヒントを与えて自ら考えて行動するよう促すフィードバックを意識的に実践した。これにより、自主性を育てるコーチングのスタイルを少しずつ確立できていると感じている。
 また、安全衛生活動においては、定期的な連絡とリマインドの徹底により、課内全体での期日厳守が実現できており、活動の安定運営に寄与している。
+
+
+
+
+
+@startuml aaa
+actor Thread
+participant LogCollector
+participant DcdpConnector
+participant L0MsgSpecMap
+participant DcdpAutoRecovery
+participant RepoAdapter
+
+Thread -> LogCollector: startRoutine()
+loop while !isTerminated()
+    LogCollector -> DcdpConnector: isConnectedToDcdp()
+    alt 未接続
+        LogCollector -> DcdpConnector: connectToDcdp()
+        alt 接続失敗
+            LogCollector -> LogCollector: sleep(1)
+            continue
+        else 接続成功
+            LogCollector -> DcdpConnector: getL0MsgSpecMap()
+            LogCollector -> L0MsgSpecMap: getBrtlVersion()
+        end
+    end
+
+    LogCollector -> DcdpConnector: resetDisconnectDetectionFlag()
+    LogCollector -> DcdpConnector: getLogFromDcdp(logType, logData)
+    alt err == -1 (取得失敗)
+        LogCollector -> DcdpConnector: stopLogRequest()
+        LogCollector -> DcdpConnector: disconnectFromDcdp()
+        LogCollector -> LogCollector: sleep(1)
+        alt m_autoRecoveryFlag
+            LogCollector -> DcdpAutoRecovery: getRetransmissionTime()
+            LogCollector -> DcdpConnector: setRetransmissionTime()
+            LogCollector -> DcdpConnector: setRetransmissionMode()
+        else
+            LogCollector -> LogCollector: cleanUp()
+        end
+        continue
+    else err == -2 (End of Transmission)
+        alt m_autoRecoveryFlag
+            LogCollector -> LogCollector: finalizeTSVFile()
+            LogCollector -> DcdpAutoRecovery: notifyRecoveryEnd()
+        end
+        break
+    else 正常取得
+        LogCollector -> DcdpConnector: getDisconnectDetectionFlag()
+        alt disconnect detected
+            alt !m_autoRecoveryFlag
+                LogCollector -> DcdpConnector: disconnectFromDcdp()
+                LogCollector -> LogCollector: cleanUp()
+                continue
+            end
+        end
+
+        alt logType == L0
+            LogCollector -> logData: getMsgId()
+            LogCollector -> logData: getContext()
+            LogCollector -> logData: getSec(), getMicrosec()
+            LogCollector -> L0MsgSpecMap: extractParameters()
+            LogCollector -> logData: validateParams()
+            alt m_autoRecoveryFlag
+                LogCollector -> DcdpAutoRecovery: isRecoveryEnd()
+                alt EndJob/ResetEnd/MaxThreshold
+                    LogCollector -> LogCollector: saveMessageToTSV()
+                    LogCollector -> LogCollector: finalizeTSVFile()
+                    LogCollector -> DcdpAutoRecovery: notifyRecoveryEnd()
+                    break
+                else
+                    LogCollector -> LogCollector: saveMessageToTSV()
+                end
+            else
+                LogCollector -> RepoAdapter: executeMessageHandler()
+                alt hasAppendedData
+                    LogCollector -> LogCollector: saveMessageToTSV(..., true)
+                end
+            end
+        else logType == VERSION
+            LogCollector -> DcdpConnector: setRetransmissionTime()
+            LogCollector -> DcdpConnector: setRetransmissionMode()
+            LogCollector -> DcdpConnector: stopLogRequest()
+            LogCollector -> DcdpConnector: disconnectFromDcdp()
+        end
+    end
+end
+
+alt DcdpConnector::isConnectedToDcdp()
+    LogCollector -> DcdpConnector: disconnectFromDcdp()
+end
+LogCollector -> LogCollector: m_runningFlag = false
+@enduml
